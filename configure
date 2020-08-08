@@ -1,0 +1,11 @@
+#! /bin/bash
+sudo mv $PWD/ntrack /usr/bin
+if [[ ! -d $HOME/.config ]]; then
+    mkdir $HOME/.config
+else
+    if [[ ! -d $HOME/.config/ntrack ]]; then
+        mkdir $HOME/.config/ntrack
+    fi
+fi
+mv $PWD/ntrack.conf $HOME/.config/ntrack
+rm -Rf $PWD
