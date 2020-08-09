@@ -1,16 +1,20 @@
 #! /bin/bash
-
-# ntrack( Nerd Tracker ), a simple local document tracker which only focuses on the files in some specified abs pathes instead of file inodes.
+# =================================================================
+# ntrack( Nerd Tracker ), a simple local file and git repo tracker.
+# For file tracking, ntrack focuses on abs path instead of inode.
+# For git repo tracking, ntrack searches in $HOME/ by default.
 # Source Code: https://github.com/antoinix/ntrack
+# =================================================================
 
-# ============================================
-# === Definition of Automatic Running Function
-# ============================================
+# ===
+# === Functions for file tracking
+# ===
 
+#== Be ready for working
 BeforeTheStart()
 {
-    # $1: ntrack dir
-    # $2: target file
+    # $1: the ntrack dir in .config
+    # $2: the info file
     if [[ ! -d $HOME/.config ]]; then
         mkdir $HOME/.config
     else
@@ -27,43 +31,39 @@ BeforeTheStart()
     result_2=$(sed -n '/^Journal/ p' $2)
     result_3=$(sed -n '/^Refresh/ p' $2)
 
+    chmod +w $2
     if [[ -z $result_1 || -z $result_2 || -z $result_3 ]]; then
-        chmod +w $2
         echo -e "====================\nTarget List:\n\n"> $2
         echo -e "====================\nJournal Info:\n\n" >> $2
         echo -e "====================\nRefresh Date:\n\n" >> $2
     fi
-    chmod +w $2
 }
 
+#== Cancel the info file 'write' permission
 AtTheEnd()
 {
-    # $1: target file
+    # $1: the info file
     chmod -w $1
 }
 
-
-# ===================================================
-# === Definition of Option-dependent Running Function
-# ===================================================
-
-# Show the detailed help information
+#== Show the detailed help information
 HelpInfo()
 {
-printf "%s\n%s\n%s\n\n" "Usage: ntrack [OPTION] [FILE]" "Track the status of file in a specified path;" "Only focus on the absolute path instead of inode."
-printf "%-5s %-20s %s\n" "" "-a, --add [FILE]" "add a target in target list"
-printf "%-5s %-20s %s\n" "" "-d, --delete [FILE]" "delete the specified target from target list"
-printf "%-5s %-20s %s\n" "" "-r, --refresh" "refresh the journal and clear broken target"
-printf "%-5s %-20s %s\n" "" "-h. --help" "print the detailed help info"
-printf "%-5s %-20s %s\n" "" "[NO OPTION]" "show the target file"
+printf "%s\n%s\n%s\n%s\n\n" "Usage: ntrack [OPTION] [FILE]" "Track the status of file and git repo;" "For file tracking: Only focus on the absolute path instead of inode." "For git repo tracking: Searches in \$HOME/ by default"
+printf "%-5s %-20s %s\n" "" "-a, --add [FILE]" "For file tracking: add a target in target list"
+printf "%-5s %-20s %s\n" "" "-d, --delete [FILE]" "For file tracking: delete the specified target from target list"
+printf "%-5s %-20s %s\n" "" "-f, --file" "For file tracking: show tracked file"
+printf "%-5s %-20s %s\n" "" "-g, --git" "For git repo tracking: show tracked git repo"
+printf "%-5s %-20s %s\n" "" "-h, --help" "For both: show detailed help info"
+printf "%-5s %-20s %s\n" "" "-r, --refresh" "For file tracking refresh the info file  and clear broken target in it"
 }
 
 # If the file has no change, call it.
 printf_clean()
 {
-    # $1: number
-    # $2: file path
-    # $3 $4: modification date
+    # $1: target file number
+    # $2: target file path
+    # $3, $4: modification date of target file
     printf "\033[40;36m%-5s\033[0m \033[40;37m%-40s\033[0m \033[40;34m%-20s\033[0m \033[40;34m[%-2s]\033[0m\n"\
         "#$1" "$2" "$3 $4" "${icon_array[0]}"
 
@@ -72,9 +72,9 @@ printf_clean()
 # If the file has been changed, call it.
 printf_modify()
 {
-    # $1: number
-    # $2: file path
-    # $3 $4: modification date
+    # $1: target file number
+    # $2: target file path
+    # $3, $4: modification date of target file
     printf "\033[40;36m%-5s\033[0m \033[40;37m%-40s\033[0m \033[40;34m%-20s\033[0m \033[40;33;5m[%-2s]\033[0m\n"\
         "#$1" "$2" "$3 $4" "${icon_array[1]}"
 }
@@ -82,9 +82,9 @@ printf_modify()
 # If the file is a accessible link
 prinf_link()
 {
-    # $1: number
-    # $2: file path
-    # $3 $4: modification date
+    # $1: target file number
+    # $2: target file path
+    # $3, $4: modification date of target file
     printf "\033[40;36m%-5s\033[0m \033[40;37m%-40s\033[0m \033[40;34m%-20s\033[0m \033[40;35;5m[%-2s]\033[0m\n"\
         "#$1" "$2" "$3 $4" "${icon_array[2]}"
 }
@@ -92,19 +92,19 @@ prinf_link()
 # If the file doesn't exist or is a broken link or a directory, call it.
 printf_error()
 {
-    # $1: number
-    # $2: file path
+    # $1: target file number
+    # $2: target file path
     printf "\033[40;36m%-5s\033[0m %-61s \033[40;31;5m[%-2s]\033[0m\n"\
         "#$1" "$2" "${icon_array[3]}"
 }
 
-# Arrange targets in the file
+# Arrange targets in the info file
 ArrangeTarget()
 {
-    # $1: target number
+    # $1: target file total number
     array=() && index=0
     for counter in $(seq 1 $1); do
-        result=$(sed -n "/^#$counter/ p" $target_file)
+        result=$(sed -n "/^#$counter/ p" $info_file)
         if [[ -n $result ]]; then
             num=${result:1:1}
             array[$index]=$num
@@ -114,113 +114,112 @@ ArrangeTarget()
     if [[ $index != $1 && $index -ge 1 ]]; then
         for rigister in $(seq 1 $index); do
             num=${array[$((rigister-1))]}
-            sed -i "s/^#$num/#$rigister/g" $target_file
-            sed -i "s/^$num/$rigister/g" $target_file
+            sed -i "s/^#$num/#$rigister/g" $info_file
+            sed -i "s/^$num/$rigister/g" $info_file
         done
     fi
 }
 
-# Add new targets in the file
+# Add new targets in the info file
 AddTarget()
 {
-    # $1: target
-    new_target_num=$(($target_num+1))
+    # $1: target file
+    new_target_num=$(($target_total_num+1))
     if [[ $new_target_num = 1 ]]; then
         SaveRefreshDate
     fi
     date_info=$(stat $1 | sed -n '/^Modify/ p')
-    sed -i "/^Target/ a $1" $target_file
-    target_list_index=$(sed -n -e '/^Target/=' $target_file)
-    sed -i "$((target_list_index+1)) s/^/#$new_target_num /g" $target_file
-    journal_info_index=$(sed -n -e '/^Journal/=' $target_file)
-    sed -i "/^Journal/ a $1" $target_file
-    sed -i "$((journal_info_index+1)) s/^/$new_target_num /g" $target_file
-    sed -i "$((journal_info_index+1)) a $date_info" $target_file
+    sed -i "/^Target/ a $1" $info_file
+    target_list_index=$(sed -n -e '/^Target/=' $info_file)
+    sed -i "$((target_list_index+1)) s/^/#$new_target_num /g" $info_file
+    journal_info_index=$(sed -n -e '/^Journal/=' $info_file)
+    sed -i "/^Journal/ a $1" $info_file
+    sed -i "$((journal_info_index+1)) s/^/$new_target_num /g" $info_file
+    sed -i "$((journal_info_index+1)) a $date_info" $info_file
 }
 
-# Delete the specified target from the file
+# Delete the specified target from the info file
 DeleteTarget()
 {
-    # $1: target
-    for counter in $(seq 1 $target_num); do
-        tmp=$(sed -n "/^#$counter/ p" $target_file) && file=${tmp#*\ }
+    # $1: target file
+    for counter in $(seq 1 $target_total_num); do
+        tmp=$(sed -n "/^#$counter/ p" $info_file) && file=${tmp#*\ }
         if [[ $1 == $file ]]; then
             # delete
-            file_index=$(sed -n -e "/^$counter/=" $target_file)
+            file_index=$(sed -n -e "/^$counter/=" $info_file)
             date_index=$(($file_index+1))
-            file_in_list_index=$(sed -n -e "/^#$counter/=" $target_file)
-            sed -i "$file_index, $date_index d" $target_file
-            sed -i "$file_in_list_index d" $target_file
+            file_in_list_index=$(sed -n -e "/^#$counter/=" $info_file)
+            sed -i "$file_index, $date_index d" $info_file
+            sed -i "$file_in_list_index d" $info_file
 
-            ArrangeTarget $target_num;
+            ArrangeTarget $target_total_num;
             break
         else
-            if [[ $counter = $target_num ]]; then
-                echo no such a file
+            if [[ $counter = $target_total_num ]]; then
+                echo -e "\033[40;33mWarning:\033[0m no such a file"
             fi
         fi
     done
     return 0
 }
 
-# Check for duplicate targets in the file
+# Check for duplicate targets in the info file
 CheckRepeat()
 {
-    # $1: target
-    for counter in $(seq 1 $target_num); do
-        tmp=$(sed -n "/^#$counter/ p" $target_file) && file_original=${tmp#*\ }
-        tmp=$(sed -n "/^$counter/ p" $target_file) && file_now=${tmp#*\ }
-        if [[ $1 == $file_original || $1 == $file_now ]]; then
+    # $1: target file
+    for counter in $(seq 1 $target_total_num); do
+        tmp=$(sed -n "/^#$counter/ p" $info_file) && file=${tmp#*\ }
+        if [[ $1 == $file ]]; then
             return 1
         fi
     done
     return 0
 }
 
-# Refresh the target journal and sort targets
+# Refresh the target journal and arrange targets
 RefreshJournal()
 {
-    for counter in $(seq 1 $target_num); do
-        tmp=$(sed -n "/^#$counter/ p" $target_file) && file=${tmp#*\ }
-        file_index=$(sed -n -e "/^$counter/=" $target_file)
+    for counter in $(seq 1 $target_total_num); do
+        tmp=$(sed -n "/^#$counter/ p" $info_file) && file=${tmp#*\ }
+        file_index=$(sed -n -e "/^$counter/=" $info_file)
         date_index=$(($file_index+1))
-        file_in_list_index=$(sed -n -e "/^#$counter/=" $target_file)
+        file_in_list_index=$(sed -n -e "/^#$counter/=" $info_file)
 
         # delete the old info in journal and list
-        sed -i "$file_index, $date_index d" $target_file
-        sed -i "$file_in_list_index d" $target_file
+        sed -i "$file_index, $date_index d" $info_file
+        sed -i "$file_in_list_index d" $info_file
 
         # update the journal and the list if the file exists
         if [[ ! -L $file && -e $file && ! -d $file ]]; then
             date_info=$(stat $file | sed -n '/^Modify/ p')
 
-            sed -i "/^Target/ a $file" $target_file
-            target_list_index=$(sed -n -e '/^Target/=' $target_file)
-            sed -i "$((target_list_index+1)) s/^/#$counter /g" $target_file
-            sed -i "/^Journal/ a $file" $target_file
-            journal_info_index=$(sed -n -e '/^Journal/=' $target_file)
-            sed -i "$((journal_info_index+1)) s/^/$counter /g" $target_file
-            sed -i "$((journal_info_index+1)) a $date_info" $target_file
+            sed -i "/^Target/ a $file" $info_file
+            target_list_index=$(sed -n -e '/^Target/=' $info_file)
+            sed -i "$((target_list_index+1)) s/^/#$counter /g" $info_file
+            sed -i "/^Journal/ a $file" $info_file
+            journal_info_index=$(sed -n -e '/^Journal/=' $info_file)
+            sed -i "$((journal_info_index+1)) s/^/$counter /g" $info_file
+            sed -i "$((journal_info_index+1)) a $date_info" $info_file
         fi
     done
-    ArrangeTarget $target_num;
+    ArrangeTarget $target_total_num;
 }
 
 # Write refresh date into the file
 SaveRefreshDate()
 {
     refresh_date=$(date "+%Y-%m-%d %H:%M:%S")
-    refresh_date_index=$(sed -n -e "/^Refresh/=" $target_file)
-    sed -i "$refresh_date_index d" $target_file
+    refresh_date_index=$(sed -n -e "/^Refresh/=" $info_file)
+    sed -i "$refresh_date_index d" $info_file
     new_date="Refresh Date: "$refresh_date
-    sed -i "$((refresh_date_index-1)) a $new_date" $target_file
+    sed -i "$((refresh_date_index-1)) a $new_date" $info_file
 }
 
 # Show the last refresh date and the number of the days passed since then
 ShowRefreshDate()
 {
-    refresh_date_index=$(sed -n -e "/^Refresh/=" $target_file)
-    result=$(sed -n "$refresh_date_index p" $target_file)
+    refresh_date_index=$(sed -n -e "/^Refresh/=" $info_file)
+    result=$(sed -n "$refresh_date_index p" $info_file)
     refresh_date=$(echo $result | cut -d" " -f3) && now_date=$(date -I)
     full_refresh_date=$(echo $result | cut -d" " -f3,4)
     refresh_sec=$(date --utc -d $refresh_date +%s)
@@ -230,20 +229,18 @@ ShowRefreshDate()
         "Since Last Refresh Date:" $full_refresh_date "has passed" "$delta_date" "days"
 }
 
-# Show target journal
+# Show target file journal
 ShowJournal()
 {
-    icon_array=('🌜' '🔍' '💣' '⛔')
     if [[ -e $ntrack_dir/ntrack.conf ]]; then
         source $ntrack_dir/ntrack.conf
     fi
-
-    if [[ $target_num -ge 1 ]]; then
-        for counter in $(seq 1 $target_num); do
-            tmp=$(sed -n "/^#$counter/ p" $target_file) && file=${tmp#*\ }
-            file_index=$(sed -n -e "/^$counter/=" $target_file)
+    if [[ $target_total_num -ge 1 ]]; then
+        for counter in $(seq 1 $target_total_num); do
+            tmp=$(sed -n "/^#$counter/ p" $info_file) && file=${tmp#*\ }
+            file_index=$(sed -n -e "/^$counter/=" $info_file)
             date_index=$(($file_index+1))
-            date_original=$(sed -n "$date_index p" $target_file)
+            date_original=$(sed -n "$date_index p" $info_file)
             if [[ -L $file && -r $file ]]; then
                 date_now=$(stat $file | sed -n '/^Modify/ p')
                 formatted_date=$(echo $date_now | cut -d"." -f1 | cut -d" " -f2,3)
@@ -268,23 +265,86 @@ ShowJournal()
 }
 
 
-# ===========================
-# ======= Function Call
-# ===========================
-ntrack_dir="$HOME/.config/ntrack"
-target_file="$HOME/.config/ntrack/Target"
+# ===
+# === Functions for git repo tracking
+# ===
 
-# read and source config file
+# If the git repo is not clean, call it.
+printf_git_dirty()
+{
+    # $1: abs_path
+    printf "\033[40;35m%-17s\033[0m %-48s \033[40;33;5m%-5s\033[0m\n\n" "[${1##*/}]" $1 "[ ]"
+}
+
+# If the git repo is clean and synchronous
+printf_git_clean()
+{
+    # $1: abs_path
+    printf "\033[40;35m%-17s\033[0m %-48s \033[40;34m%-5s\033[0m\n\n" "[${1##*/}]" $1 "[🌜]"
+}
+
+# If the git repo is clean and asynchronous
+printf_git_asyn()
+{
+    # $1: abs_path
+    printf "\033[40;35m%-17s\033[0m %-48s \033[40;37m%-5s\033[0m\n\n" "[${1##*/}]" $1 "[💣]"
+}
+
+# show the status of git repo
+ShowGitRepo()
+{
 if [[ -e $ntrack_dir/ntrack.conf ]]; then
     source $ntrack_dir/ntrack.conf
 fi
+for found_file in $(find $HOME/ \
+    \( -path "${ignored_path[0]}" -o -path "${ignored_path[1]}"\
+    -o -path "${ignored_path[2]}" -o -path "${ignored_path[3]}"\
+    -o -path "${ignored_path[4]}" -o -path "${ignored_path[5]}"\
+    -o -path "${ignored_path[6]}" -o -path "${ignored_path[7]}"\
+    -o -path "${ignored_path[8]}" -o -path "${ignored_path[9]}"\
+    -o -path "${ignored_path[10]}" -o -path "${ignored_path[11]}"\
+    -o -path "${ignored_path[12]}" -o -path "${ignored_path[13]}"\
+    -o -path "${ignored_path[14]}" -o -path "${ignored_path[15]}"\
+    -o -path "${ignored_path[16]}" -o -path "${ignored_path[17]}"\
+    -o -path "${ignored_path[18]}" -o -path "${ignored_path[19]}"\
+    -o -path "${ignored_path[20]}" -o -path "${ignored_path[21]}"\
+    -o -path "${ignored_path[22]}" -o -path "${ignored_path[23]}"\
+    -o -path "${ignored_path[24]}" -o -path "${ignored_path[25]}"\
+    -o -path "${ignored_path[26]}" -o -path "${ignored_path[27]}"\
+    -o -path "${ignored_path[28]}" -o -path "${ignored_path[29]}"\
+    \) -prune -o -type d -name ".git" -print 2> /dev/null); do
+    abs_path=${found_file%/*}
+    if [[ ! $(cd $abs_path && git status | tail -n1) =~ 'working tree clean' ]]; then
+        printf_git_dirty $abs_path
+    else
+        if [[ $(cd $abs_path && git status | head -n2 | tail -n1) =~ "up to date" ]]; then
+            printf_git_clean $abs_path
+        else
+            printf_git_asyn $abs_path
+        fi
+    fi
+done
+}
 
-BeforeTheStart $ntrack_dir $target_file;
-target_num=$(sed -n '/^#/ p' $target_file | wc -l)
+# ===========================
+# ======= Function Call
+# ===========================
+config_file="$HOME/.config/ntrack/ntrack.conf"
+ntrack_dir="$HOME/.config/ntrack"
+info_file="$HOME/.config/ntrack/ntrack.info"
+icon_array=('🌜' '🔍' '💣' '⛔')
+
+# read and source config file
+if [[ -e $config_file ]]; then
+    source $config_file
+fi
+
+BeforeTheStart $ntrack_dir $info_file;
+target_total_num=$(sed -n '/^#/ p' $info_file | wc -l)
 
 # refresh
 if [[ $1 == '--refresh' || $1 == '-r' ]]; then
-    if [[ $target_num -ge 1 ]]; then
+    if [[ $target_total_num -ge 1 ]]; then
         RefreshJournal && SaveRefreshDate
     else
         echo -e "\033[40;33mWarning:\033[0m nothing in the target file"
@@ -309,7 +369,7 @@ elif [[ $1 == '--delete' || $1 == '-d' ]]; then
     if [[ -z $2 ]]; then
         echo -e "\033[40;33mWarning:\033[0m no file specified"
     else
-        if [[ $target_num -ge 1 ]]; then
+        if [[ $target_total_num -ge 1 ]]; then
             abs_path=$(realpath $2)
             DeleteTarget $abs_path;
         else
@@ -321,13 +381,17 @@ elif [[ $1 == '--delete' || $1 == '-d' ]]; then
 elif [[ $1 == '--help' || $1 == '-h' ]]; then
     HelpInfo
 
-# present
-elif [[ -z $1 ]]; then
+# show file tracking result
+elif [[ $1 == '--file' || $1 == '-f' ]]; then
     ShowRefreshDate && ShowJournal
+
+# show git repo tracking result
+elif [[ $1 == '--git' || $1 == '-g' ]]; then
+    ShowGitRepo
 
 # option error
 else
     echo -e "\033[40;31mOption Error:\033[0m use -h/--help options for help"
 fi
 
-AtTheEnd $target_file;
+AtTheEnd $info_file;

@@ -1,6 +1,5 @@
 #! /bin/bash
 sudo mv $PWD/ntrack /usr/bin
-sudo chmod +x /usr/bin/ntrack
 if [[ ! -d $HOME/.config ]]; then
     mkdir $HOME/.config
 else
