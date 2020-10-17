@@ -1,22 +1,28 @@
 #! /bin/bash
+
 # =================================================================
-# ntrack( Nerd Tracker ), a simple local file and git repo tracker.
-# For file tracking, ntrack focuses on abs path instead of inode.
-# For git repo tracking, ntrack searches in $HOME/ by default.
+# ntrack( Nerd Tracker ), a simple file and git repo tracker.
+# Tragets:
+# 1. local git repos and files
+# 2. remote files
+# For file tracking, ntrack focuses on path instead of inode
+# For git repo tracking, ntrack searches repos in $HOME by default.
 # Source Code: https://github.com/antoinix/ntrack
 # =================================================================
 
+
 # ===
-# === Functions for file tracking
+# === Some Misc
 # ===
 
-#== Be ready for working
+#== Before working
 BeforeTheStart()
 {
     # $1: the ntrack dir in .config
     # $2: the info file
     if [[ ! -d $HOME/.config ]]; then
         mkdir $HOME/.config
+        mkdir $HOME/.config/ntrack
     else
         if [[ ! -d $1 ]]; then
             mkdir $1
@@ -28,13 +34,13 @@ BeforeTheStart()
     fi
 
     result_1=$(sed -n '/^Target/ p' $2)
-    result_2=$(sed -n '/^Journal/ p' $2)
+    result_2=$(sed -n '/^Footmark/ p' $2)
     result_3=$(sed -n '/^Refresh/ p' $2)
 
     chmod +w $2
     if [[ -z $result_1 || -z $result_2 || -z $result_3 ]]; then
         echo -e "====================\nTarget List:\n\n"> $2
-        echo -e "====================\nJournal Info:\n\n" >> $2
+        echo -e "====================\nFootmark Info:\n\n" >> $2
         echo -e "====================\nRefresh Date:\n\n" >> $2
     fi
 }
@@ -49,14 +55,20 @@ AtTheEnd()
 #== Show the detailed help information
 HelpInfo()
 {
-printf "%s\n%s\n%s\n%s\n\n" "Usage: ntrack [OPTION] [FILE]" "Track the status of file and git repo;" "For file tracking: Only focus on the absolute path instead of inode." "For git repo tracking: Searches in \$HOME/ by default"
+printf "%s\n%s\n%s\n%s\n%s\n%s\n%s\n\n" "Usage: ntrack [OPTION] [FILE]" "Track files and git repos." "Targets:" "1. local git repos and files" "2. remote files" "For file tracking: Focus on path instead of inode." "For git repo tracking: Searches repos in \$HOME by default."
 printf "%-5s %-20s %s\n" "" "-a, --add [FILE]" "For file tracking: add a target in target list"
 printf "%-5s %-20s %s\n" "" "-d, --delete [FILE]" "For file tracking: delete the specified target from target list"
-printf "%-5s %-20s %s\n" "" "-f, --file" "For file tracking: show tracked file"
-printf "%-5s %-20s %s\n" "" "-g, --git" "For git repo tracking: show tracked git repo"
-printf "%-5s %-20s %s\n" "" "-h, --help" "For both: show detailed help info"
-printf "%-5s %-20s %s\n" "" "-r, --refresh" "For file tracking refresh the info file  and clear broken target in it"
+printf "%-5s %-20s %s\n" "" "-f, --file" "For file tracking: show all tracked files"
+printf "%-5s %-20s %s\n" "" "-g, --git" "For git repo tracking: show all tracked git repos"
+printf "%-5s %-20s %s\n" "" "-h, --help" "Show detailed help info"
+printf "%-5s %-20s %s\n" "" "-r, --refresh" "For file tracking, refresh the info file and clear all broken targets"
+printf "\nFILE FORMAT: local: [file_path] & remote: [user_name]@[host_ip]:[file_path]\n"
 }
+
+
+# ===
+# === Functions for file tracking
+# ===
 
 # If the file has no change, call it.
 printf_clean()
@@ -64,8 +76,8 @@ printf_clean()
     # $1: target file number
     # $2: target file path
     # $3, $4: modification date of target file
-    printf "\033[40;36m%-5s\033[0m \033[40;37m%-40s\033[0m \033[40;34m%-20s\033[0m \033[40;34m[%-2s]\033[0m\n"\
-        "#$1" "$2" "$3 $4" "${icon_array[0]}"
+    printf "\033[40;36m%-5s\033[0m \033[40;37m%s\033[0m \n %-45s \033[40;34m%-20s\033[0m \033[40;34m[%-2s]\033[0m\n\n"\
+        "#$1" "$2" " " "$3 $4" "${icon_array[0]}"
 
 }
 
@@ -75,18 +87,18 @@ printf_modify()
     # $1: target file number
     # $2: target file path
     # $3, $4: modification date of target file
-    printf "\033[40;36m%-5s\033[0m \033[40;37m%-40s\033[0m \033[40;34m%-20s\033[0m \033[40;33;5m[%-2s]\033[0m\n"\
-        "#$1" "$2" "$3 $4" "${icon_array[1]}"
+    printf "\033[40;36m%-5s\033[0m \033[40;37m%s\033[0m \n %-45s \033[40;34m%-20s\033[0m \033[40;33;5m[%-2s]\033[0m\n\n"\
+        "#$1" "$2" " " "$3 $4" "${icon_array[1]}"
 }
 
-# If the file is a accessible link
+# If the file is an accessible link
 prinf_link()
 {
     # $1: target file number
     # $2: target file path
     # $3, $4: modification date of target file
-    printf "\033[40;36m%-5s\033[0m \033[40;37m%-40s\033[0m \033[40;34m%-20s\033[0m \033[40;35;5m[%-2s]\033[0m\n"\
-        "#$1" "$2" "$3 $4" "${icon_array[2]}"
+    printf "\033[40;36m%-5s\033[0m \033[40;37m%s\033[0m \n %-45s \033[40;34m%-20s\033[0m \033[40;35;5m[%-2s]\033[0m\n\n"\
+        "#$1" "$2" " " "$3 $4" "${icon_array[2]}"
 }
 
 # If the file doesn't exist or is a broken link or a directory, call it.
@@ -94,14 +106,14 @@ printf_error()
 {
     # $1: target file number
     # $2: target file path
-    printf "\033[40;36m%-5s\033[0m %-61s \033[40;31;5m[%-2s]\033[0m\n"\
-        "#$1" "$2" "${icon_array[3]}"
+    printf "\033[40;36m%-5s\033[0m %s \n %-51s \033[40;31;5m%-10s  [%-2s]\033[0m\n\n"\
+        "#$1" "$2" " " "No File Found" "${icon_array[3]}"
 }
 
 # Arrange targets in the info file
 ArrangeTarget()
 {
-    # $1: target file total number
+    # $1: the total number of target file
     array=() && index=0
     for counter in $(seq 1 $1); do
         result=$(sed -n "/^#$counter/ p" $info_file)
@@ -120,8 +132,37 @@ ArrangeTarget()
     fi
 }
 
-# Add new targets in the info file
-AddTarget()
+# Check whether a local file is legal or not
+CheckLocalLegalFile()
+{
+    # $1: target file
+    if [[ ! -L $1 && ! -d $1 && -e $1 ]]; then
+        return 1
+    else
+        return 0
+    fi
+}
+
+# Check whether a remote file is legal or not
+CheckRemoteLegalFile()
+{
+    # $1: target file
+    file=${1##*:} && host=${1%:*}
+    stat_result_line_num=$(ssh -i ~/.ssh/id_rsa $host stat $file 2> /dev/null | wc -l)
+    if [[ $stat_result_line_num -lt 1 ]]; then
+        return 0
+    else
+        stat_result_string=$(ssh -i ~/.ssh/id_rsa $host stat $file | sed -n '2 p')
+        if [[ $stat_result_string =~ 'file' ]]; then
+                return 1
+            else
+                return 0
+        fi
+    fi
+}
+
+# Add new local targets in the info file
+AddLocalTarget()
 {
     # $1: target file
     new_target_num=$(($target_total_num+1))
@@ -132,10 +173,29 @@ AddTarget()
     sed -i "/^Target/ a $1" $info_file
     target_list_index=$(sed -n -e '/^Target/=' $info_file)
     sed -i "$((target_list_index+1)) s/^/#$new_target_num /g" $info_file
-    journal_info_index=$(sed -n -e '/^Journal/=' $info_file)
-    sed -i "/^Journal/ a $1" $info_file
-    sed -i "$((journal_info_index+1)) s/^/$new_target_num /g" $info_file
-    sed -i "$((journal_info_index+1)) a $date_info" $info_file
+    footmark_info_index=$(sed -n -e '/^Footmark/=' $info_file)
+    sed -i "/^Footmark/ a $1" $info_file
+    sed -i "$((footmark_info_index+1)) s/^/$new_target_num /g" $info_file
+    sed -i "$((footmark_info_index+1)) a $date_info" $info_file
+}
+
+# Add new remote targets in the info file
+AddRemoteTarget()
+{
+    # $1: target file
+    new_target_num=$(($target_total_num+1))
+    if [[ $new_target_num = 1 ]]; then
+        SaveRefreshDate
+    fi
+    file=${1##*:} && host=${1%:*}
+    date_info=$(ssh -i ~/.ssh/id_rsa $host stat $file | sed -n '/^Modify/ p')
+    sed -i "/^Target/ a $1" $info_file
+    target_list_index=$(sed -n -e '/^Target/=' $info_file)
+    sed -i "$((target_list_index+1)) s/^/#$new_target_num /g" $info_file
+    footmark_info_index=$(sed -n -e '/^Footmark/=' $info_file)
+    sed -i "/^Footmark/ a $1" $info_file
+    sed -i "$((footmark_info_index+1)) s/^/$new_target_num /g" $info_file
+    sed -i "$((footmark_info_index+1)) a $date_info" $info_file
 }
 
 # Delete the specified target from the info file
@@ -151,7 +211,6 @@ DeleteTarget()
             file_in_list_index=$(sed -n -e "/^#$counter/=" $info_file)
             sed -i "$file_index, $date_index d" $info_file
             sed -i "$file_in_list_index d" $info_file
-
             ArrangeTarget $target_total_num;
             break
         else
@@ -176,33 +235,64 @@ CheckRepeat()
     return 0
 }
 
-# Refresh the target journal and arrange targets
-RefreshJournal()
+# Refresh local target footmark
+RefreshLocalFootmark()
 {
-    for counter in $(seq 1 $target_total_num); do
-        tmp=$(sed -n "/^#$counter/ p" $info_file) && file=${tmp#*\ }
-        file_index=$(sed -n -e "/^$counter/=" $info_file)
-        date_index=$(($file_index+1))
-        file_in_list_index=$(sed -n -e "/^#$counter/=" $info_file)
+    # $1: target filee
+    # $2: counter
+    CheckLocalLegalFile $1;
+    if [[ $? == 1 ]]; then
+        date_info=$(stat $1 | sed -n '/^Modify/ p')
 
-        # delete the old info in journal and list
-        sed -i "$file_index, $date_index d" $info_file
-        sed -i "$file_in_list_index d" $info_file
+        sed -i "/^Target/ a $1" $info_file
+        target_list_index=$(sed -n -e '/^Target/=' $info_file)
+        sed -i "$((target_list_index+1)) s/^/#$2 /g" $info_file
+        sed -i "/^Footmark/ a $1" $info_file
+        footmark_info_index=$(sed -n -e '/^Footmark/=' $info_file)
+        sed -i "$((footmark_info_index+1)) s/^/$2 /g" $info_file
+        sed -i "$((footmark_info_index+1)) a $date_info" $info_file
+    fi
+}
 
-        # update the journal and the list if the file exists
-        if [[ ! -L $file && -e $file && ! -d $file ]]; then
-            date_info=$(stat $file | sed -n '/^Modify/ p')
+# Refresh remote target footmark
+RefreshRemoteFootmark()
+{
+    # $1: target file
+    # $2: counter
+    CheckRemoteLegalFile $1;
+    if [[ $? == 1 ]]; then
+        file=${1##*:} && host=${1%:*}
+        date_info=$(ssh -i ~/.ssh/id_rsa $host stat $file | sed -n '/^Modify/ p')
+        sed -i "/^Target/ a $1" $info_file
+        target_list_index=$(sed -n -e '/^Target/=' $info_file)
+        sed -i "$((target_list_index+1)) s/^/#$2 /g" $info_file
+        sed -i "/^Footmark/ a $1" $info_file
+        footmark_info_index=$(sed -n -e '/^Footmark/=' $info_file)
+        sed -i "$((footmark_info_index+1)) s/^/$2 /g" $info_file
+        sed -i "$((footmark_info_index+1)) a $date_info" $info_file
+    fi
+}
 
-            sed -i "/^Target/ a $file" $info_file
-            target_list_index=$(sed -n -e '/^Target/=' $info_file)
-            sed -i "$((target_list_index+1)) s/^/#$counter /g" $info_file
-            sed -i "/^Journal/ a $file" $info_file
-            journal_info_index=$(sed -n -e '/^Journal/=' $info_file)
-            sed -i "$((journal_info_index+1)) s/^/$counter /g" $info_file
-            sed -i "$((journal_info_index+1)) a $date_info" $info_file
-        fi
-    done
-    ArrangeTarget $target_total_num;
+# Refresh all target footmarks and arrange targets
+RefreshFootmark()
+{
+for counter in $(seq 1 $target_total_num); do
+    tmp=$(sed -n "/^#$counter/ p" $info_file) && file=${tmp#*\ }
+    file_index=$(sed -n -e "/^$counter/=" $info_file)
+    date_index=$(($file_index+1))
+    file_in_list_index=$(sed -n -e "/^#$counter/=" $info_file)
+
+    # delete the old info in footmark and list
+    sed -i "$file_index, $date_index d" $info_file;
+    sed -i "$file_in_list_index d" $info_file;
+
+    if [[ $file =~ ^.+\@([0-9]{1,3}\.){3}[0-9]{1,3}\:\/ ]]; then
+        RefreshRemoteFootmark $file $counter;
+    else
+        RefreshLocalFootmark $file $counter;
+    fi
+done
+ArrangeTarget $target_total_num;
 }
 
 # Write refresh date into the file
@@ -229,8 +319,59 @@ ShowRefreshDate()
         "Since Last Refresh Date:" $full_refresh_date "has passed" "$delta_date" "days"
 }
 
-# Show target file journal
-ShowJournal()
+# Show local target footmark
+ShowLocalFootmark()
+{
+    # $1: target file
+    # $2: counter
+    if [[ -L $1 && -r $1 ]]; then
+        date_now=$(stat $1 | sed -n '/^Modify/ p')
+        formatted_date=$(echo $date_now | cut -d"." -f1 | cut -d" " -f2,3)
+        printf_link $2 $1 $formatted_date;
+    else
+        if [[ ! -e $1 || -d $1 ]]; then
+            printf_error $2 $1;
+        else
+            date_now=$(stat $1 | sed -n '/^Modify/ p')
+            formatted_date=$(echo $date_now | cut -d"." -f1 | cut -d" " -f2,3)
+            if [[ $date_original == $date_now ]]; then
+                printf_clean $2 $1 $formatted_date;
+            else
+                printf_modify $2 $1 $formatted_date;
+            fi
+        fi
+    fi
+}
+
+# Show remote target footmark
+ShowRemoteFootmark()
+{
+    # $1: target file
+    # $2: counter
+    file=${1##*:} && host=${1%:*}
+    stat_result_line_num=$(ssh -i ~/.ssh/id_rsa $host stat $file | wc -l)
+    date_now=$(ssh -i ~/.ssh/id_rsa $host stat $file | sed -n '/^Modify/ p')
+    formatted_date=$(echo $date_now | cut -d"." -f1 | cut -d" " -f2,3)
+    if [[ $stat_result_line_num -lt 1 ]]; then
+        printf_error $2 $1;
+    else
+        stat_result_string=$(ssh -i ~/.ssh/id_rsa $host stat $file | sed -n '2 p')
+        if [[ $stat_result_string =~ 'directory' ]]; then
+            printf_error $2 $1;
+        elif [[ $stat_result_string =~ 'link' ]]; then
+            printf_link $2 $1 $formatted_date;
+        else
+            if [[ $date_now == $date_original ]]; then
+                printf_clean $2 $1 $formatted_date;
+            else
+                printf_modify $2 $1 $formatted_date;
+            fi
+        fi
+    fi
+}
+
+# Show all target footmark
+ShowFootmark()
 {
     if [[ -e $ntrack_dir/ntrack.conf ]]; then
         source $ntrack_dir/ntrack.conf
@@ -240,23 +381,12 @@ ShowJournal()
             tmp=$(sed -n "/^#$counter/ p" $info_file) && file=${tmp#*\ }
             file_index=$(sed -n -e "/^$counter/=" $info_file)
             date_index=$(($file_index+1))
-            date_original=$(sed -n "$date_index p" $info_file)
-            if [[ -L $file && -r $file ]]; then
-                date_now=$(stat $file | sed -n '/^Modify/ p')
-                formatted_date=$(echo $date_now | cut -d"." -f1 | cut -d" " -f2,3)
-                printf_link $counter $file $formatted_date;
+            date_original=$(sed -n "$date_index p" $info_file);
+
+            if [[ $file =~ ^.+\@([0-9]{1,3}\.){3}[0-9]{1,3}\:\/ ]]; then
+                ShowRemoteFootmark $file $counter;
             else
-                if [[ ! -e $file || -d $file ]]; then
-                    printf_error $counter $file;
-                else
-                    date_now=$(stat $file | sed -n '/^Modify/ p')
-                    formatted_date=$(echo $date_now | cut -d"." -f1 | cut -d" " -f2,3)
-                    if [[ $date_original == $date_now ]]; then
-                        printf_clean $counter $file $formatted_date;
-                    else
-                        printf_modify $counter $file $formatted_date;
-                    fi
-                fi
+                ShowLocalFootmark $file $counter;
             fi
         done
     else
@@ -312,6 +442,10 @@ for found_file in $(find $HOME/ \
     -o -path "${ignored_path[24]}" -o -path "${ignored_path[25]}"\
     -o -path "${ignored_path[26]}" -o -path "${ignored_path[27]}"\
     -o -path "${ignored_path[28]}" -o -path "${ignored_path[29]}"\
+    -o -path "${ignored_path[30]}" -o -path "${ignored_path[31]}"\
+    -o -path "${ignored_path[32]}" -o -path "${ignored_path[33]}"\
+    -o -path "${ignored_path[34]}" -o -path "${ignored_path[35]}"\
+    -o -path "${ignored_path[36]}" -o -path "${ignored_path[37]}"\
     \) -prune -o -type d -name ".git" -print 2> /dev/null); do
     abs_path=${found_file%/*}
     if [[ ! $(cd $abs_path && git status | tail -n1) =~ 'working tree clean' ]]; then
@@ -326,9 +460,10 @@ for found_file in $(find $HOME/ \
 done
 }
 
-# ===========================
-# ======= Function Call
-# ===========================
+
+# ===
+# === Main Block (function call)
+# ===
 config_file="$HOME/.config/ntrack/ntrack.conf"
 ntrack_dir="$HOME/.config/ntrack"
 info_file="$HOME/.config/ntrack/ntrack.info"
@@ -345,23 +480,37 @@ target_total_num=$(sed -n '/^#/ p' $info_file | wc -l)
 # refresh
 if [[ $1 == '--refresh' || $1 == '-r' ]]; then
     if [[ $target_total_num -ge 1 ]]; then
-        RefreshJournal && SaveRefreshDate
+        RefreshFootmark && SaveRefreshDate
     else
         echo -e "\033[40;33mWarning:\033[0m nothing in the target file"
     fi
 
 # add
 elif [[ $1 == '--add' || $1 == '-a' ]]; then
-    if [[ ! -L $2 && ! -d $2 && -e $2 ]]; then
-        abs_path=$(realpath $2)
-        CheckRepeat $abs_path;
-        if [[ $? = 1 ]]; then
-            echo -e "\033[40;33mWarning:\033[0m already exists in target file"
+    if [[ $2 =~ ^.+\@([0-9]{1,3}\.){3}[0-9]{1,3}\:\/ ]]; then
+        CheckRemoteLegalFile $2;
+        if [[ $? == 1 ]]; then
+            CheckRepeat $2
+            if [[ $? = 1 ]]; then
+                echo -e "\033[40;33mWarning:\033[0m already exists in target file"
+            else
+                AddRemoteTarget $2;
+            fi
         else
-            AddTarget $abs_path;
+            echo -e "\033[40;31mFile Error:\033[0m not a 'legal' file"
         fi
     else
-        echo -e "\033[40;31mFile Error:\033[0m not a 'legal' file"
+        if [[ ! -L $2 && ! -d $2 && -e $2 ]]; then
+            abs_path=$(realpath $2)
+            CheckRepeat $abs_path;
+            if [[ $? = 1 ]]; then
+                echo -e "\033[40;33mWarning:\033[0m already exists in target file"
+            else
+                AddLocalTarget $abs_path;
+            fi
+        else
+            echo -e "\033[40;31mFile Error:\033[0m not a 'legal' file"
+        fi
     fi
 
 # delete
@@ -370,8 +519,12 @@ elif [[ $1 == '--delete' || $1 == '-d' ]]; then
         echo -e "\033[40;33mWarning:\033[0m no file specified"
     else
         if [[ $target_total_num -ge 1 ]]; then
-            abs_path=$(realpath $2)
-            DeleteTarget $abs_path;
+            if [[ $2 =~ ^.+\@([0-9]{1,3}\.){3}[0-9]{1,3}\:\/ ]]; then
+                DeleteTarget $2;
+            else
+                abs_path=$(realpath $2)
+                DeleteTarget $abs_path;
+            fi
         else
             echo -e "\033[40;33mWarning:\033[0m no such a file"
         fi
@@ -383,7 +536,7 @@ elif [[ $1 == '--help' || $1 == '-h' ]]; then
 
 # show file tracking result
 elif [[ $1 == '--file' || $1 == '-f' ]]; then
-    ShowRefreshDate && ShowJournal
+    ShowRefreshDate && ShowFootmark
 
 # show git repo tracking result
 elif [[ $1 == '--git' || $1 == '-g' ]]; then
